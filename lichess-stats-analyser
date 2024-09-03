@@ -1,0 +1,172 @@
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+class LichessAnalyzer:
+    API_URL = "https://api.lichess.org"
+    DEFAULT_LIMIT = 10
+
+    def __init__(self, username, limit=DEFAULT_LIMIT):
+        """
+        Initialise un nouvel objet LichessAnalyzer.
+        
+        :param username: Nom d'utilisateur Lichess
+        :param limit: Nombre maximum de parties à récupérer (par défaut : 10)
+        """
+        self.username = username
+        self.limit = limit
+        self.games = []
+        self.stats = {}
+
+    def get_player_games(self):
+        """
+        Récupère les parties d'un joueur depuis l'API Lichess.
+        """
+        url = f"{self.API_URL}/games/user/{self.username}?max={self.limit}"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Erreur lors de la récupération des parties : {e}")
+            return None
+
+    def parse_game_data(self, game_data):
+        """
+        Convertit les données JSON des parties en objets Python.
+        
+        :param game_data: Données JSON des parties
+        """
+        if not game_data:
+            return
+        
+        games = []
+        try:
+            for game in game_data.get('games', []):
+                game_info = {
+                    'id': game['id'],
+                    'white': game['players']['white']['user']['name'],
+                    'black': game['players']['black']['user']['name'],
+                    'moves': game['moves'],
+                    'status': game['status']
+                }
+                games.append(game_info)
+            self.games = games
+        except KeyError as e:
+            print(f"Erreur lors de l'analyse des données : Clé manquante {e}")
+
+    def analyze_game(self, game):
+        """
+        Analyse une partie en comptant les coups et en déterminant le résultat.
+        
+        :param game: Données d'une partie
+        :return: Résultats de l'analyse sous forme de dictionnaire
+        """
+        move_count = len(game['moves'].split())
+        result = game['status']
+        return {
+            'id': game['id'],
+            'move_count': move_count,
+            'result': result
+        }
+
+    def calculate_statistics(self):
+        """
+        Calcule les statistiques des parties analysées.
+        """
+        if not self.games:
+            self.stats = {
+                'total_games': 0,
+                'wins': 0,
+                'losses': 0,
+                'draws': 0,
+                'average_moves': 0
+            }
+            return
+        
+        df = pd.DataFrame(self.games)
+        total_games = len(df)
+        wins = df[df['result'] == 'win'].shape[0]
+        losses = df[df['result'] == 'lost'].shape[0]
+        draws = df[df['result'] == 'draw'].shape[0]
+        average_moves = df['move_count'].mean()
+        
+        self.stats = {
+            'total_games': total_games,
+            'wins': wins,
+            'losses': losses,
+            'draws': draws,
+            'average_moves': average_moves
+        }
+
+    def plot_statistics(self):
+        """
+        Crée des graphiques pour visualiser les statistiques des parties.
+        """
+        if not self.stats:
+            print("Aucune statistique à afficher.")
+            return
+        
+        plt.figure(figsize=(12, 6))
+
+        # Diagramme circulaire pour les résultats
+        plt.subplot(1, 2, 1)
+        labels = ['Victoires', 'Défaites', 'Égalités']
+        sizes = [self.stats['wins'], self.stats['losses'], self.stats['draws']]
+        plt.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=140, colors=['#4CAF50', '#F44336', '#FFC107'])
+        plt.title('Répartition des Résultats')
+        
+        # Histogramme pour la distribution des coups
+        plt.subplot(1, 2, 2)
+        sns.histplot(df['move_count'], bins=range(0, 100, 5), kde=True, color='blue')
+        plt.title('Distribution des Coups par Partie')
+        plt.xlabel('Nombre de Coups')
+        plt.ylabel('Fréquence')
+        
+        plt.tight_layout()
+        plt.show()
+
+    def save_statistics_to_file(self, filename='stats_summary.txt'):
+        """
+        Sauvegarde les statistiques dans un fichier texte.
+        
+        :param filename: Nom du fichier
+        """
+        with open(filename, 'w') as file:
+            file.write("Résumé des Statistiques des Parties\n")
+            file.write(f"Total des Parties: {self.stats['total_games']}\n")
+            file.write(f"Victoires: {self.stats['wins']}\n")
+            file.write(f"Défaites: {self.stats['losses']}\n")
+            file.write(f"Égalités: {self.stats['draws']}\n")
+            file.write(f"Moyenne de Coups: {self.stats['average_moves']:.2f}\n")
+        print(f"Statistiques sauvegardées dans {filename}")
+
+    def run(self):
+        """
+        Fonction principale pour exécuter le script d'analyse des parties Lichess.
+        """
+        print(f"Récupération des parties pour l'utilisateur {self.username}...")
+        game_data = self.get_player_games()
+        self.parse_game_data(game_data)
+        
+        if not self.games:
+            print("Aucune partie trouvée ou une erreur est survenue.")
+            return
+        
+        print("Analyse des parties...")
+        analyzed_games = [self.analyze_game(game) for game in self.games]
+        
+        print("Calcul des statistiques...")
+        self.calculate_statistics()
+        
+        print("Visualisation des statistiques...")
+        self.plot_statistics()
+        
+        print("Sauvegarde des statistiques...")
+        self.save_statistics_to_file()
+
+if __name__ == "__main__":
+    USERNAME = "your_lichess_username"  # Remplacez par le nom d'utilisateur réel
+    analyzer = LichessAnalyzer(username=USERNAME)
+    analyzer.run()
